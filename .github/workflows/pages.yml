@@ -25,6 +25,24 @@ jobs:
           DERANG_API_BASE: ${{ vars.DERANG_API_BASE }}
         run: |
           node --input-type=module -e 'import {writeFileSync} from "node:fs"; const apiBase = process.env.DERANG_API_BASE || ""; if (apiBase && !apiBase.startsWith("https://")) throw new Error("Use an HTTPS API URL"); writeFileSync("dist/derang/browser/config.json", JSON.stringify({apiBase}));'
+      - name: Verify configured backend
+        if: github.event_name != 'pull_request' && vars.DERANG_API_BASE != ''
+        env:
+          DERANG_API_BASE: ${{ vars.DERANG_API_BASE }}
+        run: |
+          node --input-type=module <<'JS'
+          const base = new URL(process.env.DERANG_API_BASE);
+          if (base.protocol !== 'https:' || base.username || base.password || base.search || base.hash) {
+            throw new Error('DERANG_API_BASE must be a public HTTPS API URL.');
+          }
+          const origin = 'https://${{ github.repository_owner }}.github.io';
+          const health = new URL(base.pathname.replace(/\/$/, '') + '/health', base);
+          const response = await fetch(health, {headers: {Origin: origin}, signal: AbortSignal.timeout(20000)});
+          if (!response.ok || (await response.json()).ok !== true) throw new Error('Backend health check failed.');
+          if (response.headers.get('access-control-allow-origin') !== origin) {
+            throw new Error('APP_ORIGIN does not allow the GitHub Pages origin.');
+          }
+          JS
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist/derang/browser

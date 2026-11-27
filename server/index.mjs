@@ -239,5 +239,6 @@ export function createApi({ file = 'derang.sqlite', email, password, secret, ori
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   createApi({ file: process.env.DERANG_DB, email: process.env.ADMIN_EMAIL, password: process.env.ADMIN_PASSWORD,
-    secret: process.env.DERANG_SECRET, origin: process.env.APP_ORIGIN }).listen(Number(process.env.PORT ?? 8787));
+    secret: process.env.DERANG_SECRET, origin: process.env.APP_ORIGIN })
+    .listen(Number(process.env.PORT ?? 8787), process.env.IP || process.env.HOST || undefined);
 }
