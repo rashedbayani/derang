@@ -1,0 +1,200 @@
+<header class="site-header">
+  <div class="container header-inner">
+    <div class="brand"><span class="mark" aria-hidden="true"><i></i><i></i></span> درنگ</div>
+    @switch (view()) {
+      @case ('entry') { <button type="button" class="quiet" (click)="show('admin-login')" [disabled]="busy()">ورود مدیر</button> }
+      @case ('admin-login') { <button type="button" class="quiet" (click)="show('entry')" [disabled]="busy()">ورود اعضا</button> }
+      @default { <button type="button" class="quiet" (click)="logout()" [disabled]="busy()">خروج</button> }
+    }
+  </div>
+</header>
+<main class="container" [attr.aria-busy]="busy()">
+  @if (error()) { <div class="feedback error" role="alert">{{ error() }}</div> }
+  @if (notice()) { <div class="feedback" role="status">{{ notice() }}</div> }
+
+  @if (view() === 'entry' || view() === 'admin-login') {
+    <section class="entry-card">
+      <div class="intro">
+        <span class="orbit" aria-hidden="true"><i></i><i></i></span>
+        <h1>خودت را از نگاه<br>دوستانت ببین.</h1>
+        <p>چند دقیقه برای گفتن چیزهایی که در دوستی‌ها کمتر به زبان می‌آیند.</p>
+      </div>
+      <div class="entry-form">
+        @if (view() === 'entry') {
+          <h2>ورود به گروه</h2>
+          <p class="muted">کدی را وارد کن که مدیر گروه خصوصی برایت فرستاده است.</p>
+          <form (submit)="login($event, 'member')">
+            <label for="code">کد دعوت</label>
+            <input id="code" name="code" required maxlength="64" dir="ltr" class="code" autocomplete="off" autocapitalize="characters" spellcheck="false">
+            <button class="primary" [disabled]="busy() || configured() === false">ورود به گروه</button>
+          </form>
+        } @else {
+          <h2>ورود مدیر</h2>
+          <form (submit)="login($event, 'admin')">
+            <label for="email">ایمیل</label>
+            <input id="email" name="email" type="email" dir="ltr" required autocomplete="username" maxlength="254">
+            <label for="password">رمز عبور</label>
+            <input id="password" name="password" type="password" dir="ltr" required autocomplete="current-password" maxlength="256">
+            <button class="primary" [disabled]="busy() || configured() === false">ورود به پنل</button>
+          </form>
+        }
+        @if (configured() === false) { <p class="feedback">اتصال سرور هنوز تنظیم نشده است.</p> }
+      </div>
+    </section>
+  }
+
+  @if (view() === 'group') {
+    @if (group(); as g) {
+      <section class="page-heading">
+        <p class="muted">{{ g.name }}</p>
+        <h1>سلام {{ g.me }}</h1>
+        @if (g.open) { <p>یکی از دوستانت را انتخاب کن و از تجربه‌ات با او بگو.</p><p class="muted">مهلت بازخورد {{ dates.format(g.deadline) }} به وقت تهران</p> }
+        @else { <p>دوره به پایان رسیده است.</p><button class="primary" [disabled]="busy()" (click)="openReport()">مشاهدهٔ گزارش من</button> }
+      </section>
+      @if (g.open) {
+        <div class="friends">
+          @for (friend of g.friends; track friend.id) {
+            <article class="panel friend"><span class="avatar" aria-hidden="true">{{ friend.name.charAt(0) }}</span>
+              <h2>{{ friend.name }}</h2>
+              @if (friend.done) { <span class="status">ثبت شد</span> }
+              @else { <button class="quiet" [disabled]="busy()" (click)="startReview(friend.id)">شروع بازخورد</button> }
+            </article>
+          } @empty { <p class="muted">هنوز دوست دیگری در این گروه ثبت نشده است.</p> }
+        </div>
+        @if (g.canChangeConsent) {
+          <details class="panel settings"><summary>بخش‌های اختیاری بازخورد برای من</summary>
+            <div class="checks">
+              @for (id of options; track id; let i = $index) {
+                <label><input type="checkbox" #opt [checked]="consent().includes(id)" (change)="toggle('consent', id, opt.checked)"> {{ optionLabels[i] }}</label>
+              }
+            </div>
+            <button class="quiet" [disabled]="busy()" (click)="saveConsent()">ذخیرهٔ ترجیحات</button>
+          </details>
+        }
+      }
+    }
+  }
+
+  @if (view() === 'review') {
+    @if (form(); as review) {
+      <button class="quiet" [disabled]="busy()" (click)="backToGroup()">بازگشت به گروه</button>
+      <section class="page-heading">
+        <h1 id="review-title" tabindex="-1">بازخورد برای {{ review.name }}</h1>
+        <p>به تجربهٔ مستقیم خودت فکر کن. برای برداشت اول، اولین برخورد را به یاد بیاور و برای بقیهٔ سؤال‌ها، شش ماه اخیر را در نظر بگیر.</p>
+        <progress aria-label="پیشرفت پرسش‌نامه" [value]="step()+1" [max]="review.categories.length + (review.text ? 1 : 0)"></progress>
+      </section>
+      @if (review.categories[step()]; as category) {
+        <section class="panel questionnaire">
+          <h2>{{ category.title }}</h2>
+          @for (q of category.items; track q.id) {
+            <fieldset>
+              <legend>{{ q.prompt.replaceAll('{نام}', review.name) }}</legend>
+              <div class="scale">
+                @for (label of labels[q.scale]; track label; let i = $index) {
+                  <label><input type="radio" [name]="q.id" [checked]="answers()[q.id] === i+1" (change)="rate(q.id, i+1)">
+                  <span><strong>{{ format.format(i+1) }}</strong>{{ label }}</span></label>
+                }
+              </div>
+              <label class="skip"><input type="radio" [name]="q.id" [checked]="answers()[q.id] === 0" (change)="rate(q.id, 0)"> نمی‌توانم نظر بدهم</label>
+            </fieldset>
+          }
+        </section>
+      } @else {
+        <section class="panel questionnaire">
+          <h2>بازخورد نوشتاری</h2>
+          <p class="muted">اختیاری است. دربارهٔ رفتار مشخص بنویس و جزئیاتی را که هویتت را مشخص می‌کنند حذف کن.</p>
+          <label for="appreciation">از چه رفتاری در {{ review.name }} قدردانی می‌کنی؟</label>
+          <textarea #thanks id="appreciation" maxlength="400" [value]="appreciation" (input)="appreciation = thanks.value"></textarea>
+          <label for="change">چه تغییر کوچکی می‌تواند رابطه‌تان را بهتر کند؟</label>
+          <textarea #suggestion id="change" maxlength="400" [value]="change" (input)="change = suggestion.value"></textarea>
+        </section>
+      }
+      <div class="actions">
+        @if (step() > 0) { <button class="quiet" [disabled]="busy()" (click)="move(step()-1)">مرحلهٔ قبل</button> }
+        @if (step()+1 < review.categories.length + (review.text ? 1 : 0)) {
+          <button class="primary" [disabled]="busy()" (click)="move(step()+1)">ادامه</button>
+        } @else {
+          <button class="primary" [disabled]="busy()" (click)="submitReview()">ثبت نهایی بازخورد</button>
+        }
+      </div>
+    }
+  }
+
+  @if (view() === 'report') {
+    @if (report(); as result) {
+      <button class="quiet" [disabled]="busy()" (click)="backToGroup()">بازگشت به گروه</button>
+      <section class="page-heading"><h1>گزارش {{ result.name }}</h1><p>برداشت دوستانت از تجربه‌هایی که با هم داشته‌اید.</p></section>
+      <div class="report-grid">
+        @for (category of result.report; track category.id) {
+          <section class="panel report"><h2>{{ category.title }}</h2>
+            @for (q of category.items; track q.id) {
+              <div class="result">
+                <p>{{ q.prompt.replaceAll('{نام}', result.name) }}</p>
+                @if (q.score !== null && q.count !== null) {
+                  <meter min="0" max="5" [value]="q.score" [attr.aria-label]="q.prompt.replaceAll('{نام}', result.name)"></meter>
+                  <small>{{ format.format(q.score) }} از ۵ · {{ format.format(q.count) }} پاسخ</small>
+                } @else { <small>پاسخ کافی برای نمایش نتیجه ثبت نشده است.</small> }
+              </div>
+            }
+          </section>
+        }
+        @if (result.comments['appreciation'].length) {
+          <section class="panel report"><h2>رفتارهایی که دوستانت از آن‌ها قدردانی می‌کنند</h2>
+            @for (comment of result.comments['appreciation']; track $index) { <blockquote>{{ comment }}</blockquote> }
+          </section>
+        }
+        @if (result.comments['change'].length) {
+          <section class="panel report"><h2>پیشنهادهای دوستانت</h2>
+            @for (comment of result.comments['change']; track $index) { <blockquote>{{ comment }}</blockquote> }
+          </section>
+        }
+      </div>
+    }
+  }
+
+  @if (view() === 'admin') {
+    @if (admin(); as page) {
+      <section class="page-heading"><h1>مدیریت گروه‌ها</h1></section>
+      <section class="panel questionnaire">
+        <h2>گروه تازه</h2>
+        <form (submit)="createGroup($event)">
+          <label for="group-name">نام گروه</label>
+          <input id="group-name" name="name" required maxlength="80">
+          <label for="deadline">مهلت بازخورد به وقت دستگاه شما</label>
+          <input id="deadline" name="deadline" type="datetime-local" required>
+          <fieldset><legend>حداکثر ۳ دستهٔ تکمیلی</legend><div class="checks">
+            @for (category of page.categories; track category.id) {
+              <label><input type="checkbox" #extra [checked]="extras().includes(category.id)" [disabled]="extras().length >= 3 && !extras().includes(category.id)" (change)="toggle('extras', category.id, extra.checked)"> {{ category.title }}</label>
+            }
+          </div></fieldset>
+          <button class="primary" [disabled]="busy()">ساخت گروه</button>
+        </form>
+      </section>
+      @if (invite()) {
+        <aside class="panel invite" role="status">
+          <p>کد را همین حالا کپی کن و خصوصی برای عضو بفرست. این کد دوباره نمایش داده نمی‌شود.</p>
+          <code dir="ltr">{{ invite() }}</code>
+          <button class="quiet" [disabled]="busy()" (click)="copyInvite()">کپی کد</button>
+          <button class="quiet" (click)="invite.set('')">بستن</button>
+        </aside>
+      }
+      <div class="report-grid">
+        @for (g of page.groups; track g.id) {
+          <section class="panel report"><h2>{{ g.name }}</h2>
+            <p class="muted">{{ g.open ? 'باز' : 'پایان‌یافته' }} · {{ dates.format(g.deadline) }}</p>
+            <ul>@for (person of g.members; track person.id) { <li>{{ person.name }}</li> } @empty { <li>هنوز عضوی اضافه نشده است.</li> }</ul>
+            @if (g.open) {
+              <form (submit)="addMember($event, g.id)">
+                <label [for]="'member-' + g.id">نام عضو تازه</label>
+                <input [id]="'member-' + g.id" name="name" required maxlength="80">
+                <button class="primary" [disabled]="busy()">افزودن عضو و ساخت کد</button>
+              </form>
+              <button class="quiet" [disabled]="busy()" (click)="closeGroup(g.id)">پایان دوره و انتشار گزارش‌ها</button>
+            }
+          </section>
+        }
+      </div>
+    }
+  }
+</main>
+<footer class="container footer">درنگ · بازخورد دوستانه</footer>
