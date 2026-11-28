@@ -129,6 +129,19 @@
     @if (report(); as result) {
       <button class="quiet" [disabled]="busy()" (click)="backToGroup()">بازگشت به گروه</button>
       <section class="page-heading"><h1>گزارش {{ result.name }}</h1><p>برداشت دوستانت از تجربه‌هایی که با هم داشته‌اید.</p></section>
+      @if (result.analysis || result.analysisAvailable) {
+        <section class="panel questionnaire">
+          <h2>جمع‌بندی بازخوردها با هوش مصنوعی</h2>
+          @if (result.analysis) {
+            <p style="white-space: pre-line">{{ result.analysis }}</p>
+          } @else {
+            <p class="muted">برای تهیهٔ جمع‌بندی، فقط متن عمومی پرسش‌ها، میانگین امتیاز و تعداد پاسخ‌های معتبر به OpenAI فرستاده می‌شود.</p>
+            <div class="actions">
+              <button class="primary" [disabled]="busy()" (click)="generateAnalysis()">{{ busy() ? 'در حال تهیهٔ جمع‌بندی…' : 'دریافت جمع‌بندی' }}</button>
+            </div>
+          }
+        </section>
+      }
       <div class="report-grid">
         @for (category of result.report; track category.id) {
           <section class="panel report"><h2>{{ category.title }}</h2>

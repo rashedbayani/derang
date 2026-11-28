@@ -8,7 +8,7 @@ type Friend = { id: string; name: string; done: number };
 type Group = { id: string; name: string; open: boolean; deadline: number };
 type GroupPage = Group & { me: string; consent: string[]; canChangeConsent: boolean; friends: Friend[] };
 type Form = { name: string; categories: Category[]; text: boolean };
-type Report = { name: string; report: Category<Question & { score: number | null; count: number | null }>[]; comments: Record<string, string[]> };
+type Report = { analysis?: string | null; analysisAvailable?: boolean; name: string; report: Category<Question & { score: number | null; count: number | null }>[]; comments: Record<string, string[]> };
 type ManagedGroup = Group & { members: Pick<Friend, 'id' | 'name'>[] };
 
 @Component({
@@ -178,6 +178,13 @@ class App {
   openReport() {
     void this.task(async () => { this.report.set(await this.request<Report>('/report')); this.show('report'); });
   }
+  generateAnalysis() {
+    void this.task(async () => {
+      const {summary} = await this.request<{summary:string}>('/report/analysis', {});
+      this.report.update(report => report ? {...report, analysis:summary} : report);
+    });
+  }
+
   createGroup(event: Event) {
     event.preventDefault();
     const fields = new FormData(event.target as HTMLFormElement);
