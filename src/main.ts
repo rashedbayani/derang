@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component, signal, provideZonelessChangeDetection } from '@angular/core';
 import { bootstrapApplication } from '@angular/platform-browser';
 
-type View = 'entry' | 'admin-login' | 'group' | 'review' | 'report' | 'admin';
+type View = 'entry' | 'owner-login' | 'create' | 'group' | 'review' | 'report' | 'manage';
 type Question = { id: string; prompt: string; scale: 'frequency' | 'extent' };
 type Category<T = Question> = { id: string; title: string; items: T[] };
 type Friend = { id: string; name: string; done: number };
@@ -9,7 +9,7 @@ type Group = { id: string; name: string; open: boolean; deadline: number };
 type GroupPage = Group & { me: string; consent: string[]; canChangeConsent: boolean; friends: Friend[] };
 type Form = { name: string; categories: Category[]; text: boolean };
 type Report = { name: string; report: Category<Question & { score: number | null; count: number | null }>[]; comments: Record<string, string[]> };
-type Admin = { categories: { id: string; title: string }[]; groups: (Group & { members: Friend[] })[] };
+type ManagedGroup = Group & { members: Pick<Friend, 'id' | 'name'>[] };
 
 @Component({
   selector: 'derang-app',
@@ -24,7 +24,10 @@ class App {
   readonly group = signal<GroupPage | null>(null);
   readonly form = signal<Form | null>(null);
   readonly report = signal<Report | null>(null);
-  readonly admin = signal<Admin | null>(null);
+  readonly managed = signal<ManagedGroup | null>(null);
+  readonly categories = signal<{id: string; title: string}[]>([]);
+  readonly groupKey = signal(sessionStorage.getItem('derang-group-key') ?? '');
+  readonly ownerKey = signal('');
   readonly answers = signal<Record<string, number>>({});
   readonly step = signal(0);
   readonly consent = signal<string[]>([]);
@@ -42,7 +45,7 @@ class App {
   appreciation = '';
   change = '';
   private apiBase = '';
-  private token = sessionStorage.getItem('derang-session') ?? '';
+  private token = sessionStorage.getItem('derang-group-session') ?? '';
   private target = '';
   private readonly init = fetch(new URL('config.json', document.baseURI), {cache:'no-store'})
     .then(response => response.json())
@@ -54,7 +57,7 @@ class App {
 
   constructor() {
     if (this.token) void this.task(async () => {
-      if (sessionStorage.getItem('derang-role') === 'admin') await this.openAdmin();
+      if (sessionStorage.getItem('derang-group-role') === 'owner') await this.openManage();
       else await this.openGroup();
     });
   }
@@ -88,24 +91,39 @@ class App {
     this.notice.set('');
     this.view.set(view);
   }
-  login(event: Event, type: 'member' | 'admin') {
+  login(event: Event, type: 'member' | 'owner') {
     event.preventDefault();
     const fields = new FormData(event.target as HTMLFormElement);
     void this.task(async () => {
-      const result = await this.request<{token:string;role:string}>('/access/' + type, Object.fromEntries(fields));
-      this.token = result.token;
-      sessionStorage.setItem('derang-session', result.token);
-      sessionStorage.setItem('derang-role', result.role);
-      if (type === 'admin') await this.openAdmin();
+      const result = await this.request<{token:string}>('/access/' + type, Object.fromEntries(fields));
+      this.setSession(result.token, type, String(fields.get('groupKey')).replace(/[\s-]/g, '').toUpperCase());
+      if (type === 'owner') await this.openManage();
       else await this.openGroup();
+    });
+  }
+  private setSession(token: string, role: 'member' | 'owner', groupKey: string) {
+    this.token = token;
+    this.groupKey.set(groupKey);
+    sessionStorage.setItem('derang-group-session', token);
+    sessionStorage.setItem('derang-group-role', role);
+    sessionStorage.setItem('derang-group-key', groupKey);
+  }
+  openCreate() {
+    void this.task(async () => {
+      this.categories.set(await this.request<{id:string;title:string}[]>('/categories'));
+      this.show('create');
     });
   }
   private clear() {
     this.token = '';
-    sessionStorage.removeItem('derang-session');
-    sessionStorage.removeItem('derang-role');
+    sessionStorage.removeItem('derang-group-session');
+    sessionStorage.removeItem('derang-group-role');
     this.group.set(null);
-    this.admin.set(null);
+    this.managed.set(null);
+    this.extras.set([]);
+    this.ownerKey.set('');
+    this.groupKey.set('');
+    sessionStorage.removeItem('derang-group-key');
     this.report.set(null);
     this.form.set(null);
     this.invite.set('');
@@ -121,10 +139,11 @@ class App {
     this.show('group');
   }
   backToGroup() { void this.task(() => this.openGroup()); }
-  private async openAdmin() {
-    this.admin.set(await this.request<Admin>('/admin'));
-    this.show('admin');
+  async openManage() {
+    this.managed.set(await this.request<ManagedGroup>('/manage'));
+    this.show('manage');
   }
+  refreshManage() { void this.task(() => this.openManage()); }
   toggle(list: 'extras' | 'consent', id: string, selected: boolean) {
     this[list].update(value => selected ? [...new Set([...value,id])] : value.filter(entry => entry !== id));
   }
@@ -164,29 +183,32 @@ class App {
     const fields = new FormData(event.target as HTMLFormElement);
     const deadline = Date.parse(String(fields.get('deadline')));
     void this.task(async () => {
-      await this.request('/groups', {name:fields.get('name'), deadline, categories:this.extras()});
+      const result = await this.request<{token:string;groupKey:string;ownerKey:string}>('/groups',
+        {name:fields.get('name'), deadline, categories:this.extras()});
+      this.setSession(result.token, 'owner', result.groupKey);
+      this.ownerKey.set(result.ownerKey);
       this.extras.set([]);
-      (event.target as HTMLFormElement).reset();
-      await this.openAdmin();
-      this.notice.set('گروه ساخته شد.');
+      this.show('manage');
+      await this.openManage();
     });
   }
-  addMember(event: Event, id: string) {
+  addMember(event: Event) {
     event.preventDefault();
-    const name = new FormData(event.target as HTMLFormElement).get('name');
+    const form = event.target as HTMLFormElement;
+    const name = new FormData(form).get('name');
     void this.task(async () => {
-      const result = await this.request<{code:string}>('/groups/' + id + '/members', {name});
+      const result = await this.request<{code:string}>('/manage/members', {name});
       this.invite.set(result.code);
-      (event.target as HTMLFormElement).reset();
-      await this.openAdmin();
+      form.reset();
+      await this.openManage();
     });
   }
-  copyInvite() {
-    void this.task(async () => { await navigator.clipboard.writeText(this.invite()); this.notice.set('کد کپی شد.'); });
+  copyKey(key: string) {
+    void this.task(async () => { await navigator.clipboard.writeText(key); this.notice.set('کلید کپی شد.'); });
   }
-  closeGroup(id: string) {
+  closeGroup() {
     if (!confirm('دوره بسته شود و گزارش‌ها منتشر شوند؟')) return;
-    void this.task(async () => { await this.request('/groups/' + id + '/close', {}); await this.openAdmin(); });
+    void this.task(async () => { await this.request('/manage/close', {}); await this.openManage(); });
   }
 }
 bootstrapApplication(App, {providers:[provideZonelessChangeDetection()]}).catch(console.error);

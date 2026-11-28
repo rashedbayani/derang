@@ -2,8 +2,9 @@
   <div class="container header-inner">
     <div class="brand"><span class="mark" aria-hidden="true"><i></i><i></i></span> درنگ</div>
     @switch (view()) {
-      @case ('entry') { <button type="button" class="quiet" (click)="show('admin-login')" [disabled]="busy()">ورود مدیر</button> }
-      @case ('admin-login') { <button type="button" class="quiet" (click)="show('entry')" [disabled]="busy()">ورود اعضا</button> }
+      @case ('entry') { <button type="button" class="quiet" (click)="show('owner-login')" [disabled]="busy()">مدیریت گروه</button> }
+      @case ('owner-login') { <button type="button" class="quiet" (click)="show('entry')" [disabled]="busy()">ورود اعضا</button> }
+      @case ('create') { <button type="button" class="quiet" (click)="show('entry')" [disabled]="busy()">ورود اعضا</button> }
       @default { <button type="button" class="quiet" (click)="logout()" [disabled]="busy()">خروج</button> }
     }
   </div>
@@ -12,7 +13,7 @@
   @if (error()) { <div class="feedback error" role="alert">{{ error() }}</div> }
   @if (notice()) { <div class="feedback" role="status">{{ notice() }}</div> }
 
-  @if (view() === 'entry' || view() === 'admin-login') {
+  @if (view() === 'entry' || view() === 'owner-login') {
     <section class="entry-card">
       <div class="intro">
         <span class="orbit" aria-hidden="true"><i></i><i></i></span>
@@ -22,20 +23,24 @@
       <div class="entry-form">
         @if (view() === 'entry') {
           <h2>ورود به گروه</h2>
-          <p class="muted">کدی را وارد کن که مدیر گروه خصوصی برایت فرستاده است.</p>
+          <p class="muted">کلید گروه و کلید شخصی‌ات را از سازندهٔ گروه بگیر.</p>
           <form (submit)="login($event, 'member')">
-            <label for="code">کد دعوت</label>
-            <input id="code" name="code" required maxlength="64" dir="ltr" class="code" autocomplete="off" autocapitalize="characters" spellcheck="false">
-            <button class="primary" [disabled]="busy() || configured() === false">ورود به گروه</button>
+            <label for="member-group-key">کلید گروه</label>
+            <input id="member-group-key" name="groupKey" required maxlength="80" dir="ltr" class="code" autocomplete="off" spellcheck="false">
+            <label for="member-key">کلید شخصی</label>
+            <input id="member-key" name="key" type="password" required maxlength="80" dir="ltr" class="code" autocomplete="off">
+            <button class="primary" [disabled]="busy() || configured() !== true">ورود به گروه</button>
+            <button type="button" class="quiet" (click)="openCreate()" [disabled]="busy() || configured() !== true">ساخت گروه تازه</button>
           </form>
         } @else {
-          <h2>ورود مدیر</h2>
-          <form (submit)="login($event, 'admin')">
-            <label for="email">ایمیل</label>
-            <input id="email" name="email" type="email" dir="ltr" required autocomplete="username" maxlength="254">
-            <label for="password">رمز عبور</label>
-            <input id="password" name="password" type="password" dir="ltr" required autocomplete="current-password" maxlength="256">
-            <button class="primary" [disabled]="busy() || configured() === false">ورود به پنل</button>
+          <h2>مدیریت گروه</h2>
+          <p class="muted">از کلید مدیریتی استفاده کن که هنگام ساخت گروه دریافت کردی.</p>
+          <form (submit)="login($event, 'owner')">
+            <label for="owner-group-key">کلید گروه</label>
+            <input id="owner-group-key" name="groupKey" required maxlength="80" dir="ltr" class="code" autocomplete="off" spellcheck="false">
+            <label for="owner-key">کلید مدیریت</label>
+            <input id="owner-key" name="key" type="password" required maxlength="80" dir="ltr" class="code" autocomplete="off">
+            <button class="primary" [disabled]="busy() || configured() !== true">ورود به مدیریت گروه</button>
           </form>
         }
         @if (configured() === false) { <p class="feedback">اتصال سرور هنوز تنظیم نشده است.</p> }
@@ -152,48 +157,62 @@
     }
   }
 
-  @if (view() === 'admin') {
-    @if (admin(); as page) {
-      <section class="page-heading"><h1>مدیریت گروه‌ها</h1></section>
-      <section class="panel questionnaire">
-        <h2>گروه تازه</h2>
-        <form (submit)="createGroup($event)">
-          <label for="group-name">نام گروه</label>
-          <input id="group-name" name="name" required maxlength="80">
-          <label for="deadline">مهلت بازخورد به وقت دستگاه شما</label>
-          <input id="deadline" name="deadline" type="datetime-local" required>
-          <fieldset><legend>حداکثر ۳ دستهٔ تکمیلی</legend><div class="checks">
-            @for (category of page.categories; track category.id) {
-              <label><input type="checkbox" #extra [checked]="extras().includes(category.id)" [disabled]="extras().length >= 3 && !extras().includes(category.id)" (change)="toggle('extras', category.id, extra.checked)"> {{ category.title }}</label>
-            }
-          </div></fieldset>
-          <button class="primary" [disabled]="busy()">ساخت گروه</button>
-        </form>
-      </section>
-      @if (invite()) {
-        <aside class="panel invite" role="status">
-          <p>کد را همین حالا کپی کن و خصوصی برای عضو بفرست. این کد دوباره نمایش داده نمی‌شود.</p>
-          <code dir="ltr">{{ invite() }}</code>
-          <button class="quiet" [disabled]="busy()" (click)="copyInvite()">کپی کد</button>
-          <button class="quiet" (click)="invite.set('')">بستن</button>
-        </aside>
+  @if (view() === 'create') {
+    <section class="page-heading"><h1>ساخت گروه تازه</h1></section>
+    <section class="panel questionnaire">
+      <form (submit)="createGroup($event)">
+        <label for="group-name">نام گروه</label>
+        <input id="group-name" name="name" required maxlength="80">
+        <label for="deadline">مهلت بازخورد به وقت دستگاه شما</label>
+        <input id="deadline" name="deadline" type="datetime-local" required>
+        <fieldset><legend>حداکثر ۳ دستهٔ تکمیلی</legend><div class="checks">
+          @for (category of categories(); track category.id) {
+            <label><input type="checkbox" #extra [checked]="extras().includes(category.id)" [disabled]="extras().length >= 3 && !extras().includes(category.id)" (change)="toggle('extras', category.id, extra.checked)"> {{ category.title }}</label>
+          }
+        </div></fieldset>
+        <button class="primary" [disabled]="busy()">ساخت گروه</button>
+      </form>
+    </section>
+  }
+
+  @if (view() === 'manage') {
+    <section class="panel invite">
+      <h2>کلید گروه</h2>
+      <p>این کلید را با اعضای همین گروه به اشتراک بگذار.</p>
+      <code dir="ltr">{{ groupKey() }}</code>
+      <button class="quiet" [disabled]="busy()" (click)="copyKey(groupKey())">کپی کلید گروه</button>
+      @if (ownerKey()) {
+        <h2>کلید مدیریت</h2>
+        <p>این کلید را خصوصی نگه دار و همین حالا ذخیره کن. برای مدیریت دوبارهٔ گروه به آن نیاز داری و با بارگذاری مجدد صفحه نمایش داده نمی‌شود.</p>
+        <code dir="ltr">{{ ownerKey() }}</code>
+        <button class="quiet" [disabled]="busy()" (click)="copyKey(ownerKey())">کپی کلید مدیریت</button>
       }
-      <div class="report-grid">
-        @for (g of page.groups; track g.id) {
-          <section class="panel report"><h2>{{ g.name }}</h2>
-            <p class="muted">{{ g.open ? 'باز' : 'پایان‌یافته' }} · {{ dates.format(g.deadline) }}</p>
-            <ul>@for (person of g.members; track person.id) { <li>{{ person.name }}</li> } @empty { <li>هنوز عضوی اضافه نشده است.</li> }</ul>
-            @if (g.open) {
-              <form (submit)="addMember($event, g.id)">
-                <label [for]="'member-' + g.id">نام عضو تازه</label>
-                <input [id]="'member-' + g.id" name="name" required maxlength="80">
-                <button class="primary" [disabled]="busy()">افزودن عضو و ساخت کد</button>
-              </form>
-              <button class="quiet" [disabled]="busy()" (click)="closeGroup(g.id)">پایان دوره و انتشار گزارش‌ها</button>
-            }
-          </section>
+    </section>
+    @if (invite()) {
+      <aside class="panel invite" role="status">
+        <h2>کلید شخصی عضو</h2>
+        <p>این کلید و کلید گروه را خصوصی برای همان عضو بفرست. کلید شخصی دوباره نمایش داده نمی‌شود.</p>
+        <code dir="ltr">{{ invite() }}</code>
+        <button class="quiet" [disabled]="busy()" (click)="copyKey(invite())">کپی کلید شخصی</button>
+        <button class="quiet" (click)="invite.set('')">بستن</button>
+      </aside>
+    }
+    @if (managed(); as g) {
+      <section class="panel report">
+        <h2>{{ g.name }}</h2>
+        <p class="muted">{{ g.open ? 'باز' : 'پایان‌یافته' }} · {{ dates.format(g.deadline) }}</p>
+        <ul>@for (person of g.members; track person.id) { <li>{{ person.name }}</li> } @empty { <li>هنوز عضوی اضافه نشده است.</li> }</ul>
+        @if (g.open) {
+          <form (submit)="addMember($event)">
+            <label for="member-name">نام عضو تازه</label>
+            <input id="member-name" name="name" required maxlength="80">
+            <button class="primary" [disabled]="busy()">افزودن عضو و ساخت کلید</button>
+          </form>
+          <div class="actions"><button class="quiet" [disabled]="busy()" (click)="closeGroup()">پایان دوره و انتشار گزارش‌ها</button></div>
         }
-      </div>
+      </section>
+    } @else {
+      <button class="quiet" [disabled]="busy()" (click)="refreshManage()">بارگذاری گروه</button>
     }
   }
 </main>

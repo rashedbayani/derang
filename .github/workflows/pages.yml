@@ -22,13 +22,13 @@ jobs:
       - run: npm run build -- --base-href "/${{ github.event.repository.name }}/"
       - name: Set frontend API address
         env:
-          DERANG_API_BASE: ${{ vars.DERANG_API_BASE || (github.repository == 'rashedbayani/derang' && 'https://ztcqpybmrzdlhxdrldfc.supabase.co/functions/v1/derang') || '' }}
+          DERANG_API_BASE: ${{ vars.DERANG_API_BASE || (github.repository == 'rashedbayani/derang' && 'https://ztcqpybmrzdlhxdrldfc.supabase.co/functions/v1/derang-v2') || '' }}
         run: |
           node --input-type=module -e 'import {writeFileSync} from "node:fs"; const apiBase = process.env.DERANG_API_BASE || ""; if (apiBase && !apiBase.startsWith("https://")) throw new Error("Use an HTTPS API URL"); writeFileSync("dist/derang/browser/config.json", JSON.stringify({apiBase}));'
       - name: Verify configured backend
         if: github.event_name != 'pull_request' && (vars.DERANG_API_BASE != '' || github.repository == 'rashedbayani/derang')
         env:
-          DERANG_API_BASE: ${{ vars.DERANG_API_BASE || (github.repository == 'rashedbayani/derang' && 'https://ztcqpybmrzdlhxdrldfc.supabase.co/functions/v1/derang') || '' }}
+          DERANG_API_BASE: ${{ vars.DERANG_API_BASE || (github.repository == 'rashedbayani/derang' && 'https://ztcqpybmrzdlhxdrldfc.supabase.co/functions/v1/derang-v2') || '' }}
         run: |
           node --input-type=module <<'JS'
           const base = new URL(process.env.DERANG_API_BASE);
@@ -41,6 +41,15 @@ jobs:
           if (!response.ok || (await response.json()).ok !== true) throw new Error('Backend health check failed.');
           if (response.headers.get('access-control-allow-origin') !== origin) {
             throw new Error('APP_ORIGIN does not allow the GitHub Pages origin.');
+          }
+          if (process.env.DERANG_API_BASE.endsWith('/derang-v2')) {
+            const categories = await fetch(new URL(health.href.replace(/\/health$/, '/categories')), {signal: AbortSignal.timeout(20000)});
+            if (!categories.ok || !(await categories.json()).length) throw new Error('Group setup categories are unavailable.');
+            const invalid = await fetch(new URL(health.href.replace(/\/health$/, '/access/member')), {
+              method: 'POST', headers: {Origin: origin, 'Content-Type': 'application/json'},
+              body: JSON.stringify({groupKey: '0'.repeat(24), key: '0'.repeat(32)}), signal: AbortSignal.timeout(20000)
+            });
+            if (invalid.status !== 401) throw new Error('The group API did not reject invalid credentials as expected.');
           }
           JS
       - uses: actions/upload-pages-artifact@v3
