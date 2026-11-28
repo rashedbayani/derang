@@ -22,13 +22,13 @@ jobs:
       - run: npm run build -- --base-href "/${{ github.event.repository.name }}/"
       - name: Set frontend API address
         env:
-          DERANG_API_BASE: ${{ vars.DERANG_API_BASE }}
+          DERANG_API_BASE: ${{ vars.DERANG_API_BASE || (github.repository == 'rashedbayani/derang' && 'https://ztcqpybmrzdlhxdrldfc.supabase.co/functions/v1/derang') || '' }}
         run: |
           node --input-type=module -e 'import {writeFileSync} from "node:fs"; const apiBase = process.env.DERANG_API_BASE || ""; if (apiBase && !apiBase.startsWith("https://")) throw new Error("Use an HTTPS API URL"); writeFileSync("dist/derang/browser/config.json", JSON.stringify({apiBase}));'
       - name: Verify configured backend
-        if: github.event_name != 'pull_request' && vars.DERANG_API_BASE != ''
+        if: github.event_name != 'pull_request' && (vars.DERANG_API_BASE != '' || github.repository == 'rashedbayani/derang')
         env:
-          DERANG_API_BASE: ${{ vars.DERANG_API_BASE }}
+          DERANG_API_BASE: ${{ vars.DERANG_API_BASE || (github.repository == 'rashedbayani/derang' && 'https://ztcqpybmrzdlhxdrldfc.supabase.co/functions/v1/derang') || '' }}
         run: |
           node --input-type=module <<'JS'
           const base = new URL(process.env.DERANG_API_BASE);
