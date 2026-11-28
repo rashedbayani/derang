@@ -31,6 +31,7 @@
             <label for="member-key">کلید شخصی</label>
             <input id="member-key" name="key" type="password" required maxlength="80" dir="ltr" class="code" autocomplete="off">
             <button class="primary" [disabled]="busy() || configured() !== true">ورود به گروه</button>
+            <button type="button" class="quiet" (click)="show('register')" [disabled]="busy() || configured() !== true">درخواست عضویت</button>
             <button type="button" class="quiet" (click)="openCreate()" [disabled]="busy() || configured() !== true">ساخت گروه تازه</button>
           </form>
         } @else {
@@ -56,14 +57,16 @@
         <p>درخواستت ثبت شد. پس از تأیید سازندهٔ گروه، با این دو کلید وارد شو.</p>
         <p>کلید شخصی فقط همین‌جا نمایش داده می‌شود. آن را ذخیره کن و خصوصی نگه دار.</p>
         <div class="invite">
-          <p>کلید گروه <code dir="ltr">{{ invitedGroup }}</code></p>
-          <button class="quiet" [disabled]="busy()" (click)="copyKey(invitedGroup)">کپی کلید گروه</button>
+          <p>کلید گروه <code dir="ltr">{{ registeredGroup() }}</code></p>
+          <button class="quiet" [disabled]="busy()" (click)="copyKey(registeredGroup())">کپی کلید گروه</button>
           <p>کلید شخصی <code dir="ltr">{{ registrationKey() }}</code></p>
           <button class="quiet" [disabled]="busy()" (click)="copyKey(registrationKey())">کپی کلید شخصی</button>
         </div>
       } @else {
         <p>نامی را بنویس که سازندهٔ گروه با آن تو را می‌شناسد.</p>
         <form (submit)="register($event)">
+          <label for="registration-group">کلید گروه</label>
+          <input id="registration-group" name="groupKey" dir="ltr" class="code" required maxlength="24" [value]="invitedGroup">
           <label for="registration-name">نام</label>
           <input id="registration-name" name="name" required maxlength="80" autocomplete="name">
           <button class="primary" [disabled]="busy() || configured() !== true">ارسال درخواست عضویت</button>
@@ -226,15 +229,6 @@
         <button class="quiet" [disabled]="busy()" (click)="copyKey(ownerKey())">کپی کلید مدیریت</button>
       }
     </section>
-    @if (invite()) {
-      <aside class="panel invite" role="status">
-        <h2>لینک دعوت یک‌بارمصرف</h2>
-        <p>لینک را خصوصی برای یک نفر بفرست. پس از ثبت‌نام، درخواستش اینجا نمایش داده می‌شود.</p>
-        <input dir="ltr" aria-label="لینک دعوت" readonly [value]="invite()">
-        <button class="quiet" [disabled]="busy()" (click)="copyKey(invite())">کپی لینک دعوت</button>
-        <button class="quiet" (click)="invite.set('')">بستن</button>
-      </aside>
-    }
     @if (managed(); as g) {
       <section class="panel report">
         <h2>{{ g.name }}</h2>
@@ -242,10 +236,13 @@
         <ul>
           @for (person of g.members; track person.id) {
             <li>{{ person.name }}
-              @if (!person.approved) {
+              @if (person.declined) {
+                <span class="muted">· رد شده</span>
+              } @else if (!person.approved) {
                 <span class="muted">· در انتظار تأیید</span>
                 @if (g.open) {
-                  <button class="quiet" [disabled]="busy()" (click)="approveMember(person.id)">تأیید عضویت</button>
+                  <button class="quiet" [disabled]="busy()" (click)="decideMembership(person.id, 'approve')">تأیید عضویت</button>
+                  <button class="quiet" [disabled]="busy()" (click)="decideMembership(person.id, 'decline')">رد درخواست</button>
                 }
               }
             </li>
@@ -253,7 +250,7 @@
         </ul>
         @if (g.open) {
           <div class="actions">
-            <button class="primary" [disabled]="busy()" (click)="createInvite()">ساخت لینک دعوت</button>
+            <button class="primary" [disabled]="busy()" (click)="copyKey(inviteLink())">کپی لینک دعوت گروه</button>
             <button class="quiet" [disabled]="busy()" (click)="refreshManage()">به‌روزرسانی درخواست‌ها</button>
           </div>
           <div class="actions"><button class="quiet" [disabled]="busy()" (click)="closeGroup()">پایان دوره و انتشار گزارش‌ها</button></div>

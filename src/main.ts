@@ -9,7 +9,7 @@ type Group = { id: string; name: string; open: boolean; deadline: number };
 type GroupPage = Group & { me: string; consent: string[]; canChangeConsent: boolean; friends: Friend[] };
 type Form = { name: string; categories: Category[]; text: boolean };
 type Report = { analysis?: string | null; analysisAvailable?: boolean; name: string; report: Category<Question & { score: number | null; count: number | null }>[]; comments: Record<string, string[]> };
-type ManagedGroup = Group & { members: (Pick<Friend, 'id' | 'name'> & {approved:boolean})[] };
+type ManagedGroup = Group & { members: (Pick<Friend, 'id' | 'name'> & {approved:boolean;declined:boolean})[] };
 
 @Component({
   selector: 'derang-app',
@@ -32,12 +32,11 @@ class App {
   readonly step = signal(0);
   readonly consent = signal<string[]>([]);
   readonly extras = signal<string[]>([]);
-  readonly invite = signal('');
   readonly registrationKey = signal('');
   readonly registered = signal(false);
+  readonly registeredGroup = signal('');
   private readonly inviteParams = new URLSearchParams(location.hash.slice(1));
-  readonly invitedGroup = this.inviteParams.get('group') ?? '';
-  private readonly invitation = this.inviteParams.get('invite') ?? '';
+  invitedGroup = this.inviteParams.get('group') ?? '';
   readonly configured = signal<boolean | null>(null);
   readonly options = ['style','politics','text'];
   readonly optionLabels = ['ظاهر و زبان بدن','گفت‌وگوهای سیاسی','بازخورد نوشتاری'];
@@ -61,7 +60,7 @@ class App {
     .catch(() => this.configured.set(false));
 
   constructor() {
-    if (this.invitation) {
+    if (this.invitedGroup) {
       this.view.set('register');
       return;
     }
@@ -135,7 +134,6 @@ class App {
     sessionStorage.removeItem('derang-group-key');
     this.report.set(null);
     this.form.set(null);
-    this.invite.set('');
     this.answers.set({});
     this.show('entry');
   }
@@ -210,6 +208,7 @@ class App {
   }
   leaveRegistration() {
     history.replaceState(null, '', location.pathname + location.search);
+    this.invitedGroup = '';
     this.registrationKey.set('');
     this.registered.set(false);
     if (sessionStorage.getItem('derang-group-role') === 'owner' && this.token) this.refreshManage();
@@ -218,28 +217,29 @@ class App {
   }
   register(event: Event) {
     event.preventDefault();
-    const name = new FormData(event.target as HTMLFormElement).get('name');
+    const fields = new FormData(event.target as HTMLFormElement);
+    const name = fields.get('name');
+    const groupKey = String(fields.get('groupKey') ?? '').trim().toUpperCase();
     void this.task(async () => {
       const key = this.registrationKey() || Array.from(crypto.getRandomValues(new Uint8Array(16)),
         byte => byte.toString(16).padStart(2, '0')).join('').toUpperCase();
       this.registrationKey.set(key);
-      await this.request('/register', {name, groupKey:this.invitedGroup, invite:this.invitation, key});
+      await this.request('/register', {name, groupKey, key});
+      this.registeredGroup.set(groupKey);
       this.registered.set(true);
     });
   }
-  createInvite() {
-    void this.task(async () => {
-      const {invite} = await this.request<{invite:string}>('/manage/invites', {});
-      const url = new URL(document.baseURI);
-      url.hash = new URLSearchParams({group:this.groupKey(),invite}).toString();
-      this.invite.set(url.href);
-    });
+  inviteLink() {
+    const url = new URL(document.baseURI);
+    url.hash = new URLSearchParams({group:this.groupKey()}).toString();
+    return url.href;
   }
-  approveMember(id: string) {
+  decideMembership(id: string, decision: 'approve' | 'decline') {
+    if (decision === 'decline' && !confirm('درخواست عضویت رد شود؟')) return;
     void this.task(async () => {
-      await this.request('/manage/members/' + id + '/approve', {});
+      await this.request('/manage/members/' + id + '/' + decision, {});
       await this.openManage();
-      this.notice.set('عضویت تأیید شد.');
+      this.notice.set(decision === 'approve' ? 'عضویت تأیید شد.' : 'درخواست عضویت رد شد.');
     });
   }
   copyKey(key: string) {
