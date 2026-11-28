@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component, signal, provideZonelessChangeDetection } from '@angular/core';
 import { bootstrapApplication } from '@angular/platform-browser';
 
-type View = 'entry' | 'owner-login' | 'create' | 'group' | 'review' | 'report' | 'manage';
+type View = 'entry' | 'owner-login' | 'create' | 'group' | 'review' | 'report' | 'manage' | 'register';
 type Question = { id: string; prompt: string; scale: 'frequency' | 'extent' };
 type Category<T = Question> = { id: string; title: string; items: T[] };
 type Friend = { id: string; name: string; done: number };
@@ -9,7 +9,7 @@ type Group = { id: string; name: string; open: boolean; deadline: number };
 type GroupPage = Group & { me: string; consent: string[]; canChangeConsent: boolean; friends: Friend[] };
 type Form = { name: string; categories: Category[]; text: boolean };
 type Report = { analysis?: string | null; analysisAvailable?: boolean; name: string; report: Category<Question & { score: number | null; count: number | null }>[]; comments: Record<string, string[]> };
-type ManagedGroup = Group & { members: Pick<Friend, 'id' | 'name'>[] };
+type ManagedGroup = Group & { members: (Pick<Friend, 'id' | 'name'> & {approved:boolean})[] };
 
 @Component({
   selector: 'derang-app',
@@ -33,6 +33,11 @@ class App {
   readonly consent = signal<string[]>([]);
   readonly extras = signal<string[]>([]);
   readonly invite = signal('');
+  readonly registrationKey = signal('');
+  readonly registered = signal(false);
+  private readonly inviteParams = new URLSearchParams(location.hash.slice(1));
+  readonly invitedGroup = this.inviteParams.get('group') ?? '';
+  private readonly invitation = this.inviteParams.get('invite') ?? '';
   readonly configured = signal<boolean | null>(null);
   readonly options = ['style','politics','text'];
   readonly optionLabels = ['ظاهر و زبان بدن','گفت‌وگوهای سیاسی','بازخورد نوشتاری'];
@@ -56,6 +61,10 @@ class App {
     .catch(() => this.configured.set(false));
 
   constructor() {
+    if (this.invitation) {
+      this.view.set('register');
+      return;
+    }
     if (this.token) void this.task(async () => {
       if (sessionStorage.getItem('derang-group-role') === 'owner') await this.openManage();
       else await this.openGroup();
@@ -70,7 +79,7 @@ class App {
       headers: { ...(body === undefined ? {} : {'Content-Type':'application/json'}), ...(this.token ? {Authorization:'Bearer ' + this.token} : {}) },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
-    if (response.status === 401 && !path.startsWith('/access/')) this.clear();
+    if (response.status === 401 && this.view() !== 'register' && !path.startsWith('/access/')) this.clear();
     const result = await response.json().catch(() => null);
     if (!response.ok) throw new Error(result?.message ?? 'سرور در دسترس نیست.');
     return result as T;
@@ -139,7 +148,7 @@ class App {
     this.show('group');
   }
   backToGroup() { void this.task(() => this.openGroup()); }
-  async openManage() {
+  private async openManage() {
     this.managed.set(await this.request<ManagedGroup>('/manage'));
     this.show('manage');
   }
@@ -199,15 +208,38 @@ class App {
       await this.openManage();
     });
   }
-  addMember(event: Event) {
+  leaveRegistration() {
+    history.replaceState(null, '', location.pathname + location.search);
+    this.registrationKey.set('');
+    this.registered.set(false);
+    if (sessionStorage.getItem('derang-group-role') === 'owner' && this.token) this.refreshManage();
+    else if (this.token) this.backToGroup();
+    else this.show('entry');
+  }
+  register(event: Event) {
     event.preventDefault();
-    const form = event.target as HTMLFormElement;
-    const name = new FormData(form).get('name');
+    const name = new FormData(event.target as HTMLFormElement).get('name');
     void this.task(async () => {
-      const result = await this.request<{code:string}>('/manage/members', {name});
-      this.invite.set(result.code);
-      form.reset();
+      const key = this.registrationKey() || Array.from(crypto.getRandomValues(new Uint8Array(16)),
+        byte => byte.toString(16).padStart(2, '0')).join('').toUpperCase();
+      this.registrationKey.set(key);
+      await this.request('/register', {name, groupKey:this.invitedGroup, invite:this.invitation, key});
+      this.registered.set(true);
+    });
+  }
+  createInvite() {
+    void this.task(async () => {
+      const {invite} = await this.request<{invite:string}>('/manage/invites', {});
+      const url = new URL(document.baseURI);
+      url.hash = new URLSearchParams({group:this.groupKey(),invite}).toString();
+      this.invite.set(url.href);
+    });
+  }
+  approveMember(id: string) {
+    void this.task(async () => {
+      await this.request('/manage/members/' + id + '/approve', {});
       await this.openManage();
+      this.notice.set('عضویت تأیید شد.');
     });
   }
   copyKey(key: string) {

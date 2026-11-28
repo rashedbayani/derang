@@ -137,6 +137,17 @@ Deno.serve(async req => {
         {groupHash:await hash(groupKey),keyHash:await hash(key)});
       return result.status ? reject(result.message,result.status) : send({token:freshToken});
     }
+    if (post && path === "/register") {
+      const groupKey = clean(body.groupKey,24).toUpperCase();
+      const invite = clean(body.invite,48).toLowerCase();
+      const key = clean(body.key,32).toUpperCase();
+      const name = clean(body.name,80);
+      if (!/^[0-9A-F]{24}$/.test(groupKey) || !/^[0-9a-f]{48}$/.test(invite) || !/^[0-9A-F]{32}$/.test(key) || !name) {
+        return reject("نام یا لینک دعوت معتبر نیست.",400);
+      }
+      const result = await rpc("register","",{groupHash:await hash(groupKey),inviteHash:await hash(invite),codeHash:await hash(key),name});
+      return result.status ? reject(result.message,result.status) : send({});
+    }
     if (!/^[a-f0-9]{64}$/.test(token)) return reject("دوباره وارد شو.",401);
     const credential = await hash(token);
     if (get && path === "/manage") {
@@ -147,12 +158,15 @@ Deno.serve(async req => {
       const result = await rpc("close_group",credential);
       return result.status ? reject(result.message,result.status) : send(result);
     }
-    if (post && path === "/manage/members") {
-      const name = clean(body.name,80);
-      if (!name) return reject("نام عضو را وارد کن.",400);
-      const code = random(16).toUpperCase();
-      const result = await rpc("new_member",credential,{name,codeHash:await hash(code)});
-      return result.status ? reject(result.message,result.status) : send({code});
+    if (post && path === "/manage/invites") {
+      const invite = random(24);
+      const result = await rpc("new_invite",credential,{inviteHash:await hash(invite)});
+      return result.status ? reject(result.message,result.status) : send({invite});
+    }
+    const approval = post ? path.match(/^\/manage\/members\/([a-f0-9-]+)\/approve$/) : null;
+    if (approval) {
+      const result = await rpc("approve_member",credential,{id:approval[1]});
+      return result.status ? reject(result.message,result.status) : send(result);
     }
     const review = path.match(/^\/review\/([\w-]+)$/);
     let result;
